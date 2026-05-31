@@ -1,0 +1,30 @@
+# StorageClass for ProxyCTL per-gateway WireGuard keypair PVCs.
+#
+# Same nfs-subdir provisioner / NFS backend as the cluster-default `nfs-ssd`,
+# but with two deliberate differences:
+#
+#   1. pathPattern nests the backing dirs under `ProxyCTL/Keys/` on the share
+#      instead of creating `proxyctl-wg-gw-<game>-keys-<pvName>` at the NFS
+#      root (the default `${namespace}-${pvcName}-${pvName}` naming, which
+#      littered /mnt/1TBSSD with one top-level folder per gateway).
+#
+#   2. reclaimPolicy: Delete + archiveOnDelete: "false" — the keypair is
+#      cheap and self-regenerating (the keygen init container recreates it),
+#      so a gateway's key dir is removed when its PVC is deleted. This stops
+#      stale `Released` dirs accumulating the way they do under `nfs-ssd`
+#      (reclaimPolicy: Retain), which is what required a manual cleanup.
+#
+# Resulting on-disk path, e.g.: /mnt/1TBSSD/ProxyCTL/Keys/proxyctl-wg-gw-cs2-keys
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-ssd-proxyctl-keys
+  labels:
+    app.kubernetes.io/managed-by: proxyctl
+provisioner: cluster.local/nfs-ssd-nfs-subdir-external-provisioner
+parameters:
+  pathPattern: "ProxyCTL/Keys/${.PVC.namespace}-${.PVC.name}"
+  archiveOnDelete: "false"
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

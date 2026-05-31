@@ -1,0 +1,137 @@
+{
+  "_comment": "Structured release notes embedded into the ProxyCTL binary and served at GET /api/release-notes. Human companion: the GitHub Releases page (keep in sync). 'version' matches the build stamp from -X main.version (a git tag like v0.2.2, or a short commit SHA for untagged builds). The 'unreleased: true' entry is shown for any running build whose version does not match a tagged entry.",
+  "releases": [
+    {
+      "version": "unreleased",
+      "name": "Unreleased",
+      "unreleased": true,
+      "date": "",
+      "summary": "Per-gateway WireGuard keys are tidied under a single folder on the NFS share (default ProxyCTL/Keys/) instead of scattering one folder per tunnel at the share root — and you can now choose that folder, and move existing keys into it, from the admin UI.",
+      "changes": [
+        {
+          "type": "changed",
+          "title": "WireGuard gateway keys nest under one folder on the share",
+          "detail": "Each gateway's keypair PVC used to be created as a top-level folder on the NFS SSD (e.g. proxyctl-wg-gw-cs2-keys-pvc-<uuid>), cluttering the share root with one entry per tunnel — plus orphaned leftovers, since the default class never reclaimed deleted dirs. Gateways now use a dedicated StorageClass whose pathPattern nests them under the chosen folder (default ProxyCTL/Keys/), and which reclaims the dir when a gateway is removed so stale folders no longer accumulate."
+        },
+        {
+          "type": "added",
+          "title": "Choose (and move) the gateway-keys folder — in Setup and the admin UI",
+          "detail": "The first-run Setup wizard now has a 'Keys' step where you state the NFS folder gateway keypairs are stored under, and a 'Gateway keys' card on the main screen lets you change it any time. ProxyCTL creates the matching StorageClass on save so new gateways land there. If existing gateways are still on a different folder, a 'Move existing gateways' button re-creates them under the new folder — regenerating each key and re-registering it on the droplet live (brief per-tunnel blip). Needs a small cluster RBAC grant (storageclasses: get/list/watch/create), included in the manifest."
+        }
+      ]
+    },
+    {
+      "version": "v0.3.0",
+      "name": "v0.3.0",
+      "date": "2026-05-29",
+      "summary": "ProxyCTL now shows what's new and lets you check for updates from inside the app — the same experience as GameCTL.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "'What's new' panel + 'Check for updates' button in the header",
+          "detail": "The header now shows the running version and a one-click 'Check for updates' (forces a fresh check, bypassing the 30-min cache). 'What's new' opens an in-app changelog listing every release with colour-coded Fix / New / Changed / Removed / Security tags, highlighting the build you're on."
+        },
+        {
+          "type": "changed",
+          "title": "Update banner opens the in-app changelog",
+          "detail": "When an update is available the banner's 'What's changing' button opens the same in-app notes (scrolled to the new version) instead of only linking out to GitHub. 'Later' dismisses it for that version; a manual check brings it back."
+        }
+      ]
+    },
+    {
+      "version": "v0.2.2",
+      "name": "v0.2.2",
+      "date": "2026-05-29",
+      "summary": "Installer is now truly one-line: it no longer prompts for the container image and works under `curl … | bash` on a fresh box.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Installer fetches the manifest correctly under curl | bash",
+          "detail": "A piped install has no script file on disk, so the old $0-based path resolved to /home and the install died with 'sed: can't read /home/k8s/proxyctl.yaml'. The installer now resolves the manifest in order — an explicit $PROXYCTL_MANIFEST, then a bundled checkout file, then the published raw URL — so `curl -fsSL https://proxyctl.cc/install.sh | bash` Just Works."
+        },
+        {
+          "type": "changed",
+          "title": "No more 'Container image' prompt — pulls the published image automatically",
+          "detail": "The installer used to stop and ask which image to pull on every run. It now uses the published GHCR image automatically; set PROXYCTL_IMAGE=… beforehand to point at a private registry without any prompt."
+        }
+      ]
+    },
+    {
+      "version": "v0.2.1",
+      "name": "v0.2.1",
+      "date": "2026-05-29",
+      "summary": "Public installer points at the real published image instead of a placeholder.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Installer defaults to the published GHCR image",
+          "detail": "The public install.sh previously defaulted to a scrubbed placeholder registry, so a fresh install couldn't pull ProxyCTL. It now defaults to the public GHCR image the cluster can pull anonymously."
+        }
+      ]
+    },
+    {
+      "version": "v0.2.0",
+      "name": "v0.2.0",
+      "date": "2026-05-29",
+      "summary": "ProxyCTL can now tell you when a new version ships and update itself in one click, wears its orange brand, and is covered by tests that gate every deploy.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "In-app update notifications + one-click self-update",
+          "detail": "ProxyCTL polls its public GitHub releases and shows a banner when a newer version is out. 'Update now' does a rolling restart of ProxyCTL's own Deployment so it re-pulls the latest image — the auth Secret, droplet config, and every gateway are left intact, so there's no re-setup."
+        },
+        {
+          "type": "changed",
+          "title": "Orange brand + matching app theme",
+          "detail": "New ProxyCTL logo and droplet header mark, and the app theme moved from emerald to the orange brand palette (green is kept for success states only)."
+        },
+        {
+          "type": "added",
+          "title": "Go unit tests + CI, gating cluster deploys",
+          "detail": "Added NAT/DNAT render and JWT auth round-trip tests plus a GitHub CI workflow (build / vet / test / UI build). clusterdeploy now runs `go vet` + `go test` and refuses to deploy if they fail."
+        }
+      ]
+    },
+    {
+      "version": "v0.1.0",
+      "name": "v0.1.0",
+      "date": "2026-05-29",
+      "summary": "First public packaging of ProxyCTL: a clean repo layout and a scrubbed public mirror with a one-line installer.",
+      "changes": [
+        {
+          "type": "changed",
+          "title": "Reorganised into server/ with a public-mirror sync",
+          "detail": "Code moved under server/, runtime state and credential files are untracked, and a sync script publishes a scrubbed, single-commit public mirror (no homelab IPs, hostnames, or keys)."
+        },
+        {
+          "type": "added",
+          "title": "One-line installer + published container image",
+          "detail": "scripts/install.sh deploys ProxyCTL into a cluster (detects ingress / MetalLB and picks how to expose the UI), pulling a published container image."
+        }
+      ]
+    },
+    {
+      "version": "v0.0.1-beta",
+      "name": "v0.0.1-beta",
+      "date": "2026-05-26",
+      "summary": "Initial public beta: drive WireGuard ↔ Kubernetes proxying and Cloudflare DNS from one small admin UI.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "Centralised WireGuard gateways targeting any namespace",
+          "detail": "Gateways live in the ProxyCTL namespace and can proxy to a Service in any namespace — one app drives them all. L4 port/game tunnels DNAT traffic from a droplet into the cluster."
+        },
+        {
+          "type": "added",
+          "title": "Web/Ingress tunnels via Traefik with real TLS",
+          "detail": "Host-routed web apps are exposed through Traefik with automatic Let's Encrypt certificates, with a Cloudflare Tunnel option and one-click DNS record creation."
+        },
+        {
+          "type": "security",
+          "title": "Input validation hardening",
+          "detail": "Entry fields are validated (TargetIP must be an IP, no control characters) before they reach the cluster."
+        }
+      ]
+    }
+  ]
+}
