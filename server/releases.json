@@ -1,0 +1,306 @@
+{
+  "_comment": "Structured release notes embedded into the ProxyCTL binary and served at GET /api/release-notes. Human companion: the GitHub Releases page (keep in sync). 'version' matches the build stamp from -X main.version (a git tag like v0.2.2, or a short commit SHA for untagged builds). The 'unreleased: true' entry is shown for any running build whose version does not match a tagged entry.",
+  "releases": [
+    {
+      "version": "unreleased",
+      "name": "Unreleased",
+      "unreleased": true,
+      "date": "",
+      "summary": "Changes headed for the next release will appear here.",
+      "changes": []
+    },
+    {
+      "version": "v0.6.2",
+      "name": "v0.6.2",
+      "date": "2026-07-17",
+      "summary": "The Storage step is now a plain, blank NFS form. No values are pulled from or suggested by your cluster's storage provisioners — you type your server and directory, test, move in.",
+      "changes": [
+        {
+          "type": "changed",
+          "title": "No more provisioner-derived suggestions in the Storage step",
+          "detail": "v0.6.1 prefilled the share from an existing NFS-subdir provisioner when one was found. That guess is only ever right on clusters shaped like the one it was written on — so it's gone. The Storage step is now two empty fields with plain placeholders: your NFS server and the directory ProxyCTL should live in. Test still creates a not-yet-existing directory (its parent must exist) and still gates moving in."
+        }
+      ]
+    },
+    {
+      "version": "v0.6.1",
+      "name": "v0.6.1",
+      "date": "2026-07-17",
+      "summary": "First-write Permission denied after moving in is fixed, and the Storage step now finds your cluster's existing NFS for you — on most clusters moving in is now Test → click, no typing.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Permission denied on the first write after moving in",
+          "detail": "Kubernetes creates a missing directory on an NFS share as root with modest permissions, while ProxyCTL runs as an unprivileged user — so the first thing written after adopting a share (the droplet SSH key) failed with 'Permission denied'. Moving in now includes a root init step that creates the app directory and hands it to ProxyCTL's user before the app starts."
+        },
+        {
+          "type": "added",
+          "title": "The Storage step prefills your cluster's existing NFS",
+          "detail": "If your cluster already runs an NFS-backed StorageClass (an nfs-subdir provisioner), the Storage step discovers the backing server and export and prefills the share as a dedicated ProxyCTL directory on that same disk. It also explains where the value came from; type over it to choose somewhere else."
+        },
+        {
+          "type": "changed",
+          "title": "Test share creates the directory for you",
+          "detail": "The probe now mounts the parent directory and lets Kubernetes materialize the final folder, so testing a path that doesn't exist yet simply creates it — no pre-emptive mkdir on the NAS. Only a missing parent still fails, with an error that says so."
+        }
+      ]
+    },
+    {
+      "version": "v0.6.0",
+      "name": "v0.6.0",
+      "date": "2026-07-17",
+      "summary": "Setup now lives entirely in the GUI. The installer asks nothing about storage: ProxyCTL boots straight to the wizard, where you name the NFS share everything will live on, TEST it from inside the cluster, and move in with one click.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "Storage is chosen — and tested — in the app",
+          "detail": "A fresh install starts on deliberately temporary storage and the wizard opens on a required Storage step. Enter your NFS share and hit Test: a short-lived probe pod mounts it from inside the cluster, writes and reads a file, and failures come back with the actual mount error instead of a pod silently stuck in ContainerCreating. 'Save & move in' then restarts ProxyCTL onto the share — app data in app/, every tunnel's WireGuard keys in Keys/, one directory to find and back up. Your admin login survives the move. A cluster-storage fallback (pick a StorageClass) in the same screen keeps clusters without NFS fully supported."
+        },
+        {
+          "type": "changed",
+          "title": "Shares are mounted inline — no PV, PVC, or StorageClass",
+          "detail": "Gateways and the app now mount the NFS share directly in the pod spec instead of going through a static PersistentVolume and shared claim. Nothing cluster-scoped is created for share storage anymore, which also removes the last places a permissions error could sneak into an apply."
+        },
+        {
+          "type": "changed",
+          "title": "The installer no longer asks about storage",
+          "detail": "install.sh is back to image + exposure + token; the storage question moved into the GUI where it can actually be verified. Headless installs can still pre-answer it with PROXYCTL_DATA_NFS=server:/path. Existing installs keep their current volume untouched — redeploys detect and preserve whatever storage was already adopted."
+        }
+      ]
+    },
+    {
+      "version": "v0.5.0",
+      "name": "v0.5.0",
+      "date": "2026-07-17",
+      "summary": "Pick one place for everything: the installer can now put ProxyCTL's app data and every gateway's WireGuard keys in a single NFS directory of your choosing, and the setup wizard now opens with a Storage step that helps you keep that share locked down to your cluster.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "One NFS share for the whole install",
+          "detail": "install.sh now asks a single storage question: give it an NFS share (server:/path) and everything ProxyCTL persists — app state, the droplet SSH key, and each tunnel's WireGuard keypair — lives in that one directory (app/ and Keys/ side by side). It's one folder to find, one folder to back up, and it survives a reinstall: the volume is a static PV with reclaimPolicy Retain. Pressing Enter keeps the classic StorageClass install exactly as before."
+        },
+        {
+          "type": "added",
+          "title": "Storage is now the first setup step",
+          "detail": "The wizard's keys step moved to the front and grew practical guidance: it shows your cluster's node IPs (NFS mounts come from the nodes, not pods), advises — never requires — restricting the export to just those IPs, and offers optional paste-ready commands that create a locked-down share. On an NFS-share install the step comes prefilled with the install's own share, with keys defaulting to Keys/ inside it."
+        },
+        {
+          "type": "added",
+          "title": "New-node warnings for IP-restricted shares",
+          "detail": "Saving a keys share records which node IPs it was exported to. When a node joins the cluster later, the wizard and the Gateway keys card show exactly which node isn't covered, an updated one-line /etc/exports entry to paste, and an acknowledge button — instead of a gateway on the new node hanging at mount time with nothing naming the cause."
+        },
+        {
+          "type": "fixed",
+          "title": "Saving a keys share from inside the cluster no longer fails",
+          "detail": "Share mode re-applied its PersistentVolume on every save and every apply, which requires cluster-scoped permissions ProxyCTL's ServiceAccount intentionally doesn't have — so saves that worked in local development failed with a permissions error in a real install. ProxyCTL now leaves an existing PV alone and only ensures the namespaced claim, which needs no extra permissions."
+        }
+      ]
+    },
+    {
+      "version": "v0.4.2",
+      "name": "v0.4.2",
+      "date": "2026-07-17",
+      "summary": "Updates now happen only when you ask. ProxyCTL pins itself to a fixed version, so a pod restart — even one during Setup — can no longer bump you to a new build unprompted.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "ProxyCTL no longer updates itself without prompting",
+          "detail": "Installs now pin an immutable version tag instead of a moving ':latest'. Previously the deployment re-pulled the newest published image on any restart, so an ordinary pod reschedule — a node drain, an eviction, or re-running the installer, including while you were in the Setup screens — could silently upgrade ProxyCTL to a build you never chose. Now a restart re-pulls the exact same version, and the only thing that moves you to a new release is clicking 'Update now'."
+        },
+        {
+          "type": "changed",
+          "title": "'Update now' pins the specific new release",
+          "detail": "The in-app update button used to just restart the deployment and let it grab whatever ':latest' pointed at. It now sets the container image to the exact release tag shown in the banner, so you land on precisely that version — and stay on it across restarts until you choose to update again."
+        }
+      ]
+    },
+    {
+      "version": "v0.4.1",
+      "name": "v0.4.1",
+      "date": "2026-07-17",
+      "summary": "NFS-backed keys work with servers that don't offer NFSv4.2, and a self-inflicted 'timed out' during Apply is fixed.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Keys NFS share negotiates its version instead of requiring 4.2",
+          "detail": "The keys share volume pinned nfsvers=4.2. On a NAS that only offers NFSv3 the mount failed and the gateway pod hung before its init containers ran — surfacing as an unexplained Apply timeout rather than a storage error. The version is no longer pinned, so the mount negotiates the best both ends support (4.2 → 4.1 → 4.0 → 3). If your server already speaks 4.2 nothing changes."
+        },
+        {
+          "type": "fixed",
+          "title": "Apply no longer cancels its own rollout wait",
+          "detail": "The gateway rollout-status check ran with a longer timeout than the step that contained it, so ProxyCTL's own deadline cancelled kubectl and printed a bare 'timed out' that hid the real reason. The wait now sits inside a larger budget, so the actual rollout result surfaces."
+        }
+      ]
+    },
+    {
+      "version": "v0.4.0",
+      "name": "v0.4.0",
+      "date": "2026-07-17",
+      "summary": "You can type the exact NFS server and path your WireGuard keys live on — right in Setup — instead of being tied to a fixed storage layout.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "Name the NFS share your gateway keys are stored on",
+          "detail": "The Keys step (and the Gateway keys card) now accept a raw NFS server + export path, with the cluster-discovered values shown as placeholders and a live preview of where each gateway's keys will land. Previously keys could only target a StorageClass that assumed specific paths, so a remote operator's keys effectively weren't stored where they expected. The per-gateway subfolder matches the provisioner's own naming, so pointing at an export that already holds keys reuses them rather than re-keying every tunnel."
+        }
+      ]
+    },
+    {
+      "version": "v0.3.3",
+      "name": "v0.3.3",
+      "date": "2026-07-17",
+      "summary": "ProxyCTL works out where your keys should live by reading the cluster, instead of assuming a hardcoded path.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Keys StorageClass + NFS location are discovered from the cluster",
+          "detail": "The keys location was derived from a path baked into the app, which was only correct on the maintainer's own cluster. ProxyCTL now inspects the configured StorageClass → its provisioner → that provisioner's NFS server and path to show the real location your keys will use, and falls back gracefully when it can't discover one."
+        }
+      ]
+    },
+    {
+      "version": "v0.3.2",
+      "name": "v0.3.2",
+      "date": "2026-07-17",
+      "summary": "Setting up keys on a droplet works when you log in as a non-root SSH user (e.g. 'ubuntu' on OVH Cloud), by elevating with sudo.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Remote key setup elevates via sudo for non-root SSH users",
+          "detail": "Applying to a droplet whose SSH user isn't root — such as the default 'ubuntu' on OVH Cloud — failed to write the WireGuard lock and keys because the commands ran unprivileged. ProxyCTL now wraps remote commands in 'sudo -n' when the login user isn't root, so a passwordless-sudo host behaves the same as a root login. The Test step reports whether it has root, sudo, or neither."
+        }
+      ]
+    },
+    {
+      "version": "v0.3.1",
+      "name": "v0.3.1",
+      "date": "2026-05-31",
+      "summary": "Per-gateway WireGuard keys are tidied under a single folder on the NFS share (default ProxyCTL/Keys/) instead of scattering one folder per tunnel at the share root — and you can now choose that folder, and move existing keys into it, from the admin UI.",
+      "changes": [
+        {
+          "type": "changed",
+          "title": "WireGuard gateway keys nest under one folder on the share",
+          "detail": "Each gateway's keypair PVC used to be created as a top-level folder on the NFS SSD (e.g. proxyctl-wg-gw-cs2-keys-pvc-<uuid>), cluttering the share root with one entry per tunnel — plus orphaned leftovers, since the default class never reclaimed deleted dirs. Gateways now use a dedicated StorageClass whose pathPattern nests them under the chosen folder (default ProxyCTL/Keys/), and which reclaims the dir when a gateway is removed so stale folders no longer accumulate."
+        },
+        {
+          "type": "added",
+          "title": "Choose (and move) the gateway-keys folder — in Setup and the admin UI",
+          "detail": "The first-run Setup wizard now has a 'Keys' step where you state the NFS folder gateway keypairs are stored under, and a 'Gateway keys' card on the main screen lets you change it any time. ProxyCTL creates the matching StorageClass on save so new gateways land there. If existing gateways are still on a different folder, a 'Move existing gateways' button re-creates them under the new folder — regenerating each key and re-registering it on the droplet live (brief per-tunnel blip). Needs a small cluster RBAC grant (storageclasses: get/list/watch/create), included in the manifest."
+        }
+      ]
+    },
+    {
+      "version": "v0.3.0",
+      "name": "v0.3.0",
+      "date": "2026-05-29",
+      "summary": "ProxyCTL now shows what's new and lets you check for updates from inside the app — the same experience as GameCTL.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "'What's new' panel + 'Check for updates' button in the header",
+          "detail": "The header now shows the running version and a one-click 'Check for updates' (forces a fresh check, bypassing the 30-min cache). 'What's new' opens an in-app changelog listing every release with colour-coded Fix / New / Changed / Removed / Security tags, highlighting the build you're on."
+        },
+        {
+          "type": "changed",
+          "title": "Update banner opens the in-app changelog",
+          "detail": "When an update is available the banner's 'What's changing' button opens the same in-app notes (scrolled to the new version) instead of only linking out to GitHub. 'Later' dismisses it for that version; a manual check brings it back."
+        }
+      ]
+    },
+    {
+      "version": "v0.2.2",
+      "name": "v0.2.2",
+      "date": "2026-05-29",
+      "summary": "Installer is now truly one-line: it no longer prompts for the container image and works under `curl … | bash` on a fresh box.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Installer fetches the manifest correctly under curl | bash",
+          "detail": "A piped install has no script file on disk, so the old $0-based path resolved to /home and the install died with 'sed: can't read /home/k8s/proxyctl.yaml'. The installer now resolves the manifest in order — an explicit $PROXYCTL_MANIFEST, then a bundled checkout file, then the published raw URL — so `curl -fsSL https://proxyctl.cc/install.sh | bash` Just Works."
+        },
+        {
+          "type": "changed",
+          "title": "No more 'Container image' prompt — pulls the published image automatically",
+          "detail": "The installer used to stop and ask which image to pull on every run. It now uses the published GHCR image automatically; set PROXYCTL_IMAGE=… beforehand to point at a private registry without any prompt."
+        }
+      ]
+    },
+    {
+      "version": "v0.2.1",
+      "name": "v0.2.1",
+      "date": "2026-05-29",
+      "summary": "Public installer points at the real published image instead of a placeholder.",
+      "changes": [
+        {
+          "type": "fixed",
+          "title": "Installer defaults to the published GHCR image",
+          "detail": "The public install.sh previously defaulted to a scrubbed placeholder registry, so a fresh install couldn't pull ProxyCTL. It now defaults to the public GHCR image the cluster can pull anonymously."
+        }
+      ]
+    },
+    {
+      "version": "v0.2.0",
+      "name": "v0.2.0",
+      "date": "2026-05-29",
+      "summary": "ProxyCTL can now tell you when a new version ships and update itself in one click, wears its orange brand, and is covered by tests that gate every deploy.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "In-app update notifications + one-click self-update",
+          "detail": "ProxyCTL polls its public GitHub releases and shows a banner when a newer version is out. 'Update now' does a rolling restart of ProxyCTL's own Deployment so it re-pulls the latest image — the auth Secret, droplet config, and every gateway are left intact, so there's no re-setup."
+        },
+        {
+          "type": "changed",
+          "title": "Orange brand + matching app theme",
+          "detail": "New ProxyCTL logo and droplet header mark, and the app theme moved from emerald to the orange brand palette (green is kept for success states only)."
+        },
+        {
+          "type": "added",
+          "title": "Go unit tests + CI, gating cluster deploys",
+          "detail": "Added NAT/DNAT render and JWT auth round-trip tests plus a GitHub CI workflow (build / vet / test / UI build). clusterdeploy now runs `go vet` + `go test` and refuses to deploy if they fail."
+        }
+      ]
+    },
+    {
+      "version": "v0.1.0",
+      "name": "v0.1.0",
+      "date": "2026-05-29",
+      "summary": "First public packaging of ProxyCTL: a clean repo layout and a scrubbed public mirror with a one-line installer.",
+      "changes": [
+        {
+          "type": "changed",
+          "title": "Reorganised into server/ with a public-mirror sync",
+          "detail": "Code moved under server/, runtime state and credential files are untracked, and a sync script publishes a scrubbed, single-commit public mirror (no homelab IPs, hostnames, or keys)."
+        },
+        {
+          "type": "added",
+          "title": "One-line installer + published container image",
+          "detail": "scripts/install.sh deploys ProxyCTL into a cluster (detects ingress / MetalLB and picks how to expose the UI), pulling a published container image."
+        }
+      ]
+    },
+    {
+      "version": "v0.0.1-beta",
+      "name": "v0.0.1-beta",
+      "date": "2026-05-26",
+      "summary": "Initial public beta: drive WireGuard ↔ Kubernetes proxying and Cloudflare DNS from one small admin UI.",
+      "changes": [
+        {
+          "type": "added",
+          "title": "Centralised WireGuard gateways targeting any namespace",
+          "detail": "Gateways live in the ProxyCTL namespace and can proxy to a Service in any namespace — one app drives them all. L4 port/game tunnels DNAT traffic from a droplet into the cluster."
+        },
+        {
+          "type": "added",
+          "title": "Web/Ingress tunnels via Traefik with real TLS",
+          "detail": "Host-routed web apps are exposed through Traefik with automatic Let's Encrypt certificates, with a Cloudflare Tunnel option and one-click DNS record creation."
+        },
+        {
+          "type": "security",
+          "title": "Input validation hardening",
+          "detail": "Entry fields are validated (TargetIP must be an IP, no control characters) before they reach the cluster."
+        }
+      ]
+    }
+  ]
+}

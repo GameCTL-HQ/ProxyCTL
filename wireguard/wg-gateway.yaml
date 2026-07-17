@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wg-gateway
+  namespace: gamectl
+stringData:
+  wg0.conf: |
+    [Interface]
+    Address = 10.8.0.2/24
+    PrivateKey = __GATEWAY_PRIVATE_KEY__
+    # forward game traffic arriving over the tunnel to the Satisfactory Service,
+    # MASQUERADE so replies return through this pod -> back over wg0 to droplet.
+    PostUp = iptables -t nat -A PREROUTING -d 10.8.0.2 -p udp -m multiport --dports 7777,8888 -j DNAT --to-destination 10.43.101.26
+    PostUp = iptables -t nat -A PREROUTING -d 10.8.0.2 -p tcp -m multiport --dports 7777,8888 -j DNAT --to-destination 10.43.101.26
+    PostUp = iptables -t nat -A POSTROUTING -d 10.43.101.26 -j MASQUERADE
+    PostDown = iptables -t nat -D POSTROUTING -d 10.43.101.26 -j MASQUERADE || true
+    # Blast-radius lockdown: traffic transiting this pod may ONLY reach the
+    # Satisfactory service on 7777/8888. Everything else forwarded is dropped,
+    # so a player (or wedged flow) cannot pivot anywhere else in the cluster.
+    PostUp = iptables -A FORWARD -i wg0 -o eth0 -d 10.43.101.26 -p udp -m multiport --dports 7777,8888 -j ACCEPT
+    PostUp = iptables -A FORWARD -i wg0 -o eth0 -d 10.43.101.26 -p tcp -m multiport --dports 7777,8888 -j ACCEPT
+    PostUp = iptables -A FORWARD -i eth0 -o wg0 -m state --state ESTABLISHED,RELATED -j ACCEPT
+    PostUp = iptables -A FORWARD -j DROP
+    PostDown = iptables -D FORWARD -j DROP || true
+
+    [Peer]
+    PublicKey = __DROPLET_PUBLIC_KEY__
+    Endpoint = 203.0.113.10:51820
+    AllowedIPs = 10.8.0.0/24
+    PersistentKeepalive = 25
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wg-gateway
+  namespace: gamectl
+  labels: { app: wg-gateway }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: wg-gateway } }
+  template:
+    metadata:
+      labels: { app: wg-gateway }
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        - name: sysctl
+          image: busybox:1.36
+          command: ["sh","-c","sysctl -w net.ipv4.ip_forward=1 && sysctl -w net.ipv4.conf.all.rp_filter=2"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: wireguard
+          image: lscr.io/linuxserver/wireguard@sha256:b4fdb5b5bbbdcd6c7a4433c8fe98b0b00bf8684c62542571a705543ac4a8e75c
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          env:
+            - { name: PUID, value: "1000" }
+            - { name: PGID, value: "1000" }
+            - { name: TZ, value: "UTC" }
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: wgconf, mountPath: /config/wg_confs/wg0.conf, subPath: wg0.conf }
+            - { name: modules, mountPath: /lib/modules, readOnly: true }
+          readinessProbe:
+            exec: { command: ["sh","-c","wg show wg0 | grep -q 'latest handshake' || wg show wg0 >/dev/null"] }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - { name: config, emptyDir: {} }
+        - { name: modules, hostPath: { path: /lib/modules } }
+        - name: wgconf
+          secret: { secretName: wg-gateway, items: [ { key: wg0.conf, path: wg0.conf } ] }
