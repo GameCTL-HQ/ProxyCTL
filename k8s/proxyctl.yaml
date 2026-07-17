@@ -1,0 +1,267 @@
+# ProxyCTL — in-cluster deployment manifest.
+#
+# Single-file install. `scripts/install.sh` applies this against the
+# operator's current kube context after sed-patching:
+#   __IMAGE__         the container image to pull
+#   __NAMESPACE__     install namespace (default: proxyctl). ALSO where
+#                     per-entry wg-gw-* gateway Deployments live — one
+#                     ProxyCTL can front Services in any namespace
+#                     across the cluster without extra per-app RBAC.
+#   __STORAGE_CLASS__ PVC storage class (default: nfs-ssd)
+#   __SERVICE_TYPE__  ClusterIP | NodePort | LoadBalancer
+#
+# Optional Ingress is a second file (k8s/proxyctl-ingress.yaml), applied
+# only when EXPOSE=ingress.
+#
+# Security model in-cluster:
+#   - Read-only ClusterRole on namespaces + services + pods so the UI's
+#     "kube picker" can browse target Services across the cluster.
+#   - Namespaced Role in __NAMESPACE__ for the workload lifecycle —
+#     the wg-gw-* game gateways and the cloudflared web connector
+#     (Deployments / Secrets / PVCs ProxyCTL renders) — plus a
+#     `pods/exec` permission for the gateway publickey-readback step.
+#   - Namespaced Role in __NAMESPACE__ scoped to a single Secret
+#     (`proxyctl-auth`) — holds the JWT signing key + bcrypt admin
+#     record, written on first claim. Matches GameCTL's gamectl-auth.
+#   - Web apps route through a Cloudflare Tunnel: cloudflared dials out,
+#     so no inbound exposure and no cluster-wide write is needed.
+#   - No standing creds for the droplet — those live in the wizard-managed
+#     local files on the PVC (droplet.json + droplet.key, 0600).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __NAMESPACE__
+  labels: { app.kubernetes.io/name: proxyctl }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: proxyctl
+  namespace: __NAMESPACE__
+---
+# Cluster-wide reads (picker browses any namespace's Services).
+# Pods are also listed cluster-wide so the picker can compute the
+# "X/Y ready" badge against each Service's selector — without this,
+# every Service falls back to "0/0 ready" even when its pods are up.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: proxyctl-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "services", "pods"]
+    verbs: ["get", "list", "watch"]
+  # StorageClasses (cluster-scoped) so the operator can choose / change the NFS
+  # folder where gateway keypair PVCs live: ProxyCTL creates a class whose
+  # pathPattern nests the dirs under the chosen folder. Create-if-missing only;
+  # no update/delete (a changed folder is a new class name).
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: proxyctl-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: proxyctl-reader
+subjects:
+  - kind: ServiceAccount
+    name: proxyctl
+    namespace: __NAMESPACE__
+---
+# Namespaced writes — the wg-gw-* gateways AND the cloudflared connector
+# (web apps) both live in ProxyCTL's own namespace; no cluster-wide
+# write is needed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: proxyctl-gateway-mgr
+  namespace: __NAMESPACE__
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets", "persistentvolumeclaims", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"] # reading each gateway's self-generated WG pubkey
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: proxyctl-gateway-mgr
+  namespace: __NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: proxyctl-gateway-mgr
+subjects:
+  - kind: ServiceAccount
+    name: proxyctl
+    namespace: __NAMESPACE__
+---
+# Auth Secret (matching GameCTL's gamectl-auth model): ProxyCTL writes
+# its own `proxyctl-auth` Secret on first claim, holding the JWT signing
+# key + bcrypt'd admin user. Recovery is `kubectl delete secret
+# proxyctl-auth -n __NAMESPACE__` + rollout restart → fresh bootstrap
+# token on the next pod log. RBAC is scoped to this single resourceName
+# so a compromised ProxyCTL can never reach anything else in its own ns.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: proxyctl-auth
+  namespace: __NAMESPACE__
+rules:
+  # Kubernetes authorization can't filter `create` by resourceNames
+  # (the name is in the request body, not the URL path), so the create
+  # verb has to be allowed namespace-wide. The blast radius is limited:
+  # __NAMESPACE__ only ever holds ProxyCTL itself, so the only consumer
+  # of any Secret here is ProxyCTL's own auth loader.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  # Read / mutate is scoped to the single Secret we actually manage.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["proxyctl-auth"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: proxyctl-auth
+  namespace: __NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: proxyctl-auth
+subjects:
+  - kind: ServiceAccount
+    name: proxyctl
+    namespace: __NAMESPACE__
+---
+# Persistent data: entries.json, domains.json, droplet.{json,key},
+# applied.snapshot.json, apply-state.json, known_hosts. ~50 MiB is plenty.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: proxyctl-data
+  namespace: __NAMESPACE__
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: __STORAGE_CLASS__
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Optional bootstrap Cloudflare token. Empty by default; the operator
+# normally pastes it via the in-app CF wizard which stores it 0600 on
+# the PVC instead. The admin BOOTSTRAP TOKEN is intentionally NOT here:
+# it's generated freshly in memory at pod startup if no admin is claimed,
+# logged once for install.sh to scrape via `kubectl logs`, and consumed
+# on first claim — no Secret-side copy that lingers in etcd.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: proxyctl-cf
+  namespace: __NAMESPACE__
+type: Opaque
+stringData:
+  token: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxyctl
+  namespace: __NAMESPACE__
+  labels: { app.kubernetes.io/name: proxyctl }
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # single-writer on the PVC
+  selector:
+    matchLabels: { app.kubernetes.io/name: proxyctl }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: proxyctl }
+    spec:
+      serviceAccountName: proxyctl
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: proxyctl
+          image: __IMAGE__
+          # Always so dev pushes of the same tag (e.g. :v1) reliably
+          # land on the next restart. Drop to IfNotPresent for releases.
+          imagePullPolicy: Always
+          args:
+            - "-addr=0.0.0.0:8080"
+            - "-db=/data/entries.json"
+            - "-apply-mode=ssh"
+          env:
+            # Downward API — ProxyCTL uses this to address the auth
+            # Secret in its own namespace (`<ns>/proxyctl-auth`) even
+            # when the install namespace is renamed.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # The StorageClass this install was given. ProxyCTL derives the
+            # per-gateway keys StorageClass from it (same provisioner), and
+            # resolves the backing NFS export off that provisioner to show
+            # the operator where keys actually land. Hardcoding either would
+            # only be right on the maintainer's own cluster.
+            - name: PROXYCTL_STORAGE_CLASS
+              value: "__STORAGE_CLASS__"
+            # Optional Cloudflare token bootstrap: leave empty to drive
+            # via the in-app CF wizard. If set, the binary reads it at
+            # startup. Admin auth (bootstrap token + claim) is fully
+            # in-memory — the only persisted credential is the
+            # `proxyctl-auth` Secret written on first claim.
+            - name: CF_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: proxyctl-cf
+                  key: token
+                  optional: true
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 30
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: proxyctl-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxyctl
+  namespace: __NAMESPACE__
+spec:
+  type: __SERVICE_TYPE__
+  selector: { app.kubernetes.io/name: proxyctl }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

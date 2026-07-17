@@ -1,0 +1,32 @@
+# Never bake these into the image:
+.cf-token
+droplet.key
+*.key
+known_hosts
+entries.json
+domains.json
+droplet.json
+applied.hash
+applied.snapshot.json
+apply-state.json
+.runtime-token
+runtime.log
+proxyctl       # the locally built binary; the image rebuilds its own
+# UI build cruft — the Dockerfile's Node stage rebuilds from kubeUI/ source,
+# so a local node_modules/ or pre-built web/dist must NOT shadow the
+# container build (would skip the fresh build + leak host file modes).
+kubeUI/node_modules
+kubeUI/dist
+server/web/dist
+.localdata
+dist
+out.log
+pid
+# Editor / VCS / build cruft
+.git
+.gitignore
+*.swp
+*.swo
+.DS_Store
+# Local data dir
+/data/
