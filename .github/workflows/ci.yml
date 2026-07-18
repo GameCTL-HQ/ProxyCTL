@@ -1,0 +1,36 @@
+# CI — build, vet, and test the Go control plane + build the UI bundle.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: build / vet / test
+        working-directory: server
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: build UI bundle
+        working-directory: kubeUI
+        run: |
+          npm ci
+          npm run build
