@@ -1,0 +1,38 @@
+# StorageClass for ProxyCTL per-gateway WireGuard keypair PVCs.
+#
+# NOTE: you normally do NOT apply this by hand. ProxyCTL creates this class
+# itself at Setup time (Keys step) and fills in the provisioner by reading it
+# off the StorageClass the install was given — see server/storagediscover.go.
+# This file is the reference shape of what it generates.
+#
+# Same nfs-subdir provisioner / NFS backend as the install's own StorageClass,
+# but with two deliberate differences:
+#
+#   1. pathPattern nests the backing dirs under `ProxyCTL/Keys/` on the share
+#      instead of creating `proxyctl-wg-gw-<game>-keys-<pvName>` at the export
+#      root (the default `${namespace}-${pvcName}-${pvName}` naming, which
+#      litters the share with one top-level folder per gateway).
+#
+#   2. reclaimPolicy: Delete + archiveOnDelete: "false" — the keypair is
+#      cheap and self-regenerating (the keygen init container recreates it),
+#      so a gateway's key dir is removed when its PVC is deleted. This stops
+#      stale `Released` dirs accumulating under a Retain class, which would
+#      otherwise need a manual cleanup.
+#
+# Resulting on-disk path, e.g.: <your NFS export>/ProxyCTL/Keys/proxyctl-wg-gw-cs2-keys
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-ssd-proxyctl-keys
+  labels:
+    app.kubernetes.io/managed-by: proxyctl
+# The nfs-subdir chart derives this name from its Helm RELEASE name, so it
+# differs per cluster (release "nfs-ssd" -> the value below). Match it to your
+# own: `kubectl get sc <your-class> -o jsonpath='{.provisioner}'`.
+provisioner: cluster.local/nfs-ssd-nfs-subdir-external-provisioner
+parameters:
+  pathPattern: "ProxyCTL/Keys/${.PVC.namespace}-${.PVC.name}"
+  archiveOnDelete: "false"
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
