@@ -1,0 +1,202 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "4"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app.kubernetes.io/name":"proxyctl"},"name":"proxyctl","namespace":"proxyctl"},"spec":{"replicas":1,"selector":{"matchLabels":{"app.kubernetes.io/name":"proxyctl"}},"strategy":{"type":"Recreate"},"template":{"metadata":{"labels":{"app.kubernetes.io/name":"proxyctl"}},"spec":{"containers":[{"args":["-addr=0.0.0.0:8080","-db=/data/entries.json","-apply-mode=ssh"],"env":[{"name":"POD_NAMESPACE","valueFrom":{"fieldRef":{"fieldPath":"metadata.namespace"}}},{"name":"PROXYCTL_STORAGE_CLASS","value":"nfs-ssd"},{"name":"PROXYCTL_DATA_NFS_SERVER","value":"10.0.0.100"},{"name":"PROXYCTL_DATA_NFS_EXPORT","value":"/mnt/ssd/ProxyCTL-lapstack"},{"name":"CF_API_TOKEN","valueFrom":{"secretKeyRef":{"key":"token","name":"proxyctl-cf","optional":true}}}],"image":"registry.example.com:5000/proxyctl:aaaa138","imagePullPolicy":"Always","livenessProbe":{"httpGet":{"path":"/healthz","port":8080},"initialDelaySeconds":30},"name":"proxyctl","ports":[{"containerPort":8080,"name":"http"}],"readinessProbe":{"httpGet":{"path":"/healthz","port":8080},"initialDelaySeconds":2},"resources":{"requests":{"cpu":"25m","memory":"64Mi"}},"volumeMounts":[{"mountPath":"/data","name":"data","subPath":"app"},{"mountPath":"/run/controlwg","name":"controlwg"}]},{"args":["set -u\nmkdir -p /etc/wireguard\nlast=\"\"\nwhile true; do\n  if [ -s /run/controlwg/wg0.conf ]; then\n    cur=$(cat /run/controlwg/wg0.conf)\n    if [ \"$cur\" != \"$last\" ]; then\n      umask 077\n      cp /run/controlwg/wg0.conf /etc/wireguard/wg0.conf\n      if wg show wg0 \u003e/dev/null 2\u003e\u00261; then\n        wg syncconf wg0 \u003c(wg-quick strip /etc/wireguard/wg0.conf)\n      else\n        wg-quick up /etc/wireguard/wg0.conf\n      fi\n      last=\"$cur\"\n    fi\n  fi\n  sleep 10\ndone\n"],"command":["bash","-c"],"image":"ghcr.io/gamectl-hq/wireguard-kube@sha256:baba2d49d8928f2d85e98ca58c27b4bbc208b62a00bf620bf95a15a8b245b785","name":"control-wg","resources":{"limits":{"cpu":"200m","memory":"64Mi"},"requests":{"cpu":"10m","memory":"32Mi"}},"securityContext":{"capabilities":{"add":["NET_ADMIN"]}},"volumeMounts":[{"mountPath":"/run/controlwg","name":"controlwg","readOnly":true},{"mountPath":"/lib/modules","name":"modules","readOnly":true}]}],"initContainers":[{"command":["sh","-c","mkdir -p /share/app \u0026\u0026 chown 1000:1000 /share/app"],"image":"registry.example.com:5000/proxyctl:aaaa138","name":"storage-init","securityContext":{"runAsUser":0},"volumeMounts":[{"mountPath":"/share","name":"data"}]}],"securityContext":{"fsGroup":1000},"serviceAccountName":"proxyctl","volumes":[{"name":"data","nfs":{"path":"/mnt/ssd/ProxyCTL-lapstack/data","server":"10.0.0.100"}},{"emptyDir":{},"name":"controlwg"},{"hostPath":{"path":"/lib/modules"},"name":"modules"}]}}}}
+  creationTimestamp: "2026-09-19T17:50:36Z"
+  generation: 6
+  labels:
+    app.kubernetes.io/name: proxyctl
+  name: proxyctl
+  namespace: proxyctl
+  resourceVersion: "96983"
+  uid: 5c6031f6-8470-47e5-9c64-51f999eb8936
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: proxyctl
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-09-19T21:18:22Z"
+      labels:
+        app.kubernetes.io/name: proxyctl
+    spec:
+      containers:
+      - args:
+        - -addr=0.0.0.0:8080
+        - -db=/data/entries.json
+        - -apply-mode=ssh
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: PROXYCTL_STORAGE_CLASS
+          value: nfs-ssd
+        - name: PROXYCTL_DATA_NFS_SERVER
+          value: 10.0.0.100
+        - name: PROXYCTL_DATA_NFS_EXPORT
+          value: /mnt/ssd/ProxyCTL-lapstack
+        - name: CF_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: proxyctl-cf
+              optional: true
+        - name: PROXYCTL_TUNNEL_NAME
+          value: proxyctl-lapstack
+        image: registry.example.com:5000/proxyctl:9bb050e
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: proxyctl
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 2
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: data
+          subPath: app
+        - mountPath: /run/controlwg
+          name: controlwg
+      - args:
+        - |
+          set -u
+          mkdir -p /etc/wireguard
+          last=""
+          while true; do
+            if [ -s /run/controlwg/wg0.conf ]; then
+              cur=$(cat /run/controlwg/wg0.conf)
+              if [ "$cur" != "$last" ]; then
+                umask 077
+                cp /run/controlwg/wg0.conf /etc/wireguard/wg0.conf
+                if wg show wg0 >/dev/null 2>&1; then
+                  wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)
+                else
+                  wg-quick up /etc/wireguard/wg0.conf
+                fi
+                last="$cur"
+              fi
+            fi
+            sleep 10
+          done
+        command:
+        - bash
+        - -c
+        env:
+        - name: PROXYCTL_TUNNEL_NAME
+          value: proxyctl-lapstack
+        image: ghcr.io/gamectl-hq/wireguard-kube@sha256:baba2d49d8928f2d85e98ca58c27b4bbc208b62a00bf620bf95a15a8b245b785
+        imagePullPolicy: IfNotPresent
+        name: control-wg
+        resources:
+          limits:
+            cpu: 200m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /run/controlwg
+          name: controlwg
+          readOnly: true
+        - mountPath: /lib/modules
+          name: modules
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - mkdir -p /share/app && chown 1000:1000 /share/app
+        env:
+        - name: PROXYCTL_TUNNEL_NAME
+          value: proxyctl-lapstack
+        image: registry.example.com:5000/proxyctl:9bb050e
+        imagePullPolicy: IfNotPresent
+        name: storage-init
+        resources: {}
+        securityContext:
+          runAsUser: 0
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /share
+          name: data
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1000
+      serviceAccount: proxyctl
+      serviceAccountName: proxyctl
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: data
+        nfs:
+          path: /mnt/ssd/ProxyCTL-lapstack/data
+          server: 10.0.0.100
+      - emptyDir: {}
+        name: controlwg
+      - hostPath:
+          path: /lib/modules
+          type: ""
+        name: modules
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-09-19T23:38:36Z"
+    lastUpdateTime: "2026-09-19T23:38:36Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-09-19T17:50:36Z"
+    lastUpdateTime: "2026-09-19T23:38:36Z"
+    message: ReplicaSet "proxyctl-57f7fd4bc7" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 6
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
