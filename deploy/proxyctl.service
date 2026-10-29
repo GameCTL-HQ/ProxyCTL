@@ -1,0 +1,27 @@
+[Unit]
+Description=proxyctl - WireGuard game-tunnel manager (admin/control plane)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Loopback only: the admin GUI is unreachable from the internet. Reach it
+# from your laptop with an SSH tunnel (see README).
+#
+# NOTE on credentials: proxyctl stores NO ssh key and NO kubeconfig. In
+# ssh apply-mode it borrows the AMBIENT credentials of the user this unit
+# runs as (its ssh-agent / ~/.ssh / kubeconfig). Run it as a user that has
+# the operator's droplet ssh access + a working kubeconfig, OR run it ad
+# hoc from your workstation instead of as a system unit. Set
+# -droplet-ssh / -kube-context to real values, or use -apply-mode manual.
+ExecStart=/usr/local/bin/proxyctl -addr 127.0.0.1:8088 -db /var/lib/proxyctl/entries.json -apply-mode ssh -droplet-ssh root@PLACEHOLDER-DROPLET
+Restart=always
+RestartSec=2
+
+User=proxyctl
+Group=proxyctl
+StateDirectory=proxyctl
+
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
